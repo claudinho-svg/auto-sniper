@@ -1,13 +1,49 @@
 {
- "searches": [],
- "seen": {},
- "maxid": {},
+ "searches": [
+  {
+   "make": "Mercedes-Benz",
+   "model": "c300",
+   "exclude": [],
+   "fuels": [
+    "benzine",
+    "diesel"
+   ],
+   "bodies": [
+    "coupe",
+    "sedan"
+   ],
+   "gear": "automaat",
+   "year_min": 2011,
+   "year_max": 2014,
+   "km_max": 200000,
+   "price_min": null,
+   "price_max": 5000,
+   "dist": null,
+   "sites": [
+    "2dehands",
+    "marktplaats",
+    "autoscout24"
+   ],
+   "label": "Mercedes-Benz c300",
+   "uid": 2,
+   "id": 1,
+   "primed": true
+  }
+ ],
+ "seen": {
+  "2": [
+   "as283009a6-fa39-4390-beaa-1f6933259273"
+  ]
+ },
+ "maxid": {
+  "2": {}
+ },
  "alerted": [
   "m2467463239"
  ],
  "fingerprints": {},
- "update_offset": 150583126,
- "next_id": 2,
+ "update_offset": 150583151,
+ "next_id": 3,
  "last_error_notice": 0,
  "sent": [
   [
@@ -29,6 +65,54 @@
   [
    10,
    1795038158.9042656
+  ],
+  [
+   12,
+   1795039412.1123223
+  ],
+  [
+   14,
+   1795039434.5926573
+  ],
+  [
+   16,
+   1795039502.7213674
+  ],
+  [
+   18,
+   1795039510.78471
+  ],
+  [
+   20,
+   1795039534.6043067
+  ],
+  [
+   22,
+   1795039538.8397481
+  ],
+  [
+   24,
+   1795039697.1611445
+  ],
+  [
+   26,
+   1795039704.9702847
+  ],
+  [
+   28,
+   1795039716.5775027
+  ],
+  [
+   30,
+   1795039725.2858987
+  ],
+  [
+   33,
+   1795039786.8081253
+  ],
+  [
+   35,
+   1795039788.6993783
   ]
  ],
  "draft": null
