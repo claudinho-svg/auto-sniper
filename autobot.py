@@ -148,11 +148,13 @@ def _log_sent(res):
     return mid
 
 
-def send(text, buttons=None, preview=False):
+def send(text, buttons=None, preview=False, keyboard=False):
     params = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML",
               "link_preview_options": {"is_disabled": not preview}}
     if buttons:
         params["reply_markup"] = {"inline_keyboard": buttons}
+    elif keyboard:
+        params["reply_markup"] = KEYBOARD
     try:
         return _log_sent(tg("sendMessage", **params))
     except urllib.error.HTTPError as e:
@@ -501,6 +503,8 @@ def check_searches(state):
     for k in [k for k, t in fps.items() if now - t > 7 * 86400]:
         del fps[k]
     for s in state["searches"]:
+        if s.get("paused") or state.get("paused_all"):
+            continue
         key = str(s["uid"])
         seen = state["seen"].setdefault(key, [])
         seen_set = set(seen)
@@ -563,18 +567,93 @@ def check_searches(state):
 # ================================================================ tekst & wizard
 
 HELP = (
-    "<b>🚗 Auto-sniper</b>\n"
-    "Typ gewoon merk en model, bv. <code>volkswagen golf</code> of <code>bmw 3 reeks</code>. "
-    "Daarna kies je met knoppen: brandstof, carrosserie, schakelbak, bouwjaar, km-stand, "
-    "prijs, afstand en platformen.\n"
-    "Zonder merk? Typ <code>alle merken</code>.\n"
+    "<b>🚗 Auto-sniper</b>\n\n"
+    "<b>Nieuwe zoekopdracht:</b> typ merk en model, bv. <code>volkswagen golf</code> of "
+    "<code>bmw 3 reeks</code> (of <code>alle merken</code>). Daarna kies je met knoppen: "
+    "brandstof, carrosserie, schakelbak, bouwjaar, km-stand, prijs, afstand en platformen.\n"
     "Woorden uitsluiten: <code>golf -schade -export</code>\n\n"
-    "<code>lijst</code> — je zoekopdrachten\n"
-    "<code>stop 2</code> — zoekopdracht 2 verwijderen\n\n"
-    "Je krijgt alleen auto's die er net bijkomen, met foto en 🔥 als de prijs duidelijk "
-    "onder die van vergelijkbare auto's ligt. Verdachte zoekertjes filter ik eruit. "
-    "Mijn berichten verdwijnen na 24 uur."
+    "<b>Beheren:</b> tik onderaan op <b>📋 Mijn zoekopdrachten</b> om een zoekopdracht te "
+    "bekijken, bewerken, pauzeren of verwijderen. Met <b>⏯️ Pauze</b> zet je alle meldingen "
+    "even stil.\n\n"
+    "Je krijgt alleen auto's die er net bijkomen, met foto, 🔥 bij een topdeal en ⚠️ bij een "
+    "verdacht lage prijs. Mijn berichten verdwijnen na 24 uur."
 )
+
+BTN_NEW, BTN_LIST, BTN_PAUSE, BTN_HELP = ("➕ Nieuwe zoekopdracht", "📋 Mijn zoekopdrachten",
+                                          "⏯️ Pauze aan/uit", "❓ Help")
+KEYBOARD = {"keyboard": [[{"text": BTN_NEW}, {"text": BTN_LIST}],
+                         [{"text": BTN_PAUSE}, {"text": BTN_HELP}]],
+            "resize_keyboard": True, "is_persistent": True}
+
+
+def set_commands():
+    try:
+        tg("setMyCommands", commands=[
+            {"command": "menu", "description": "Menu en knoppen tonen"},
+            {"command": "lijst", "description": "Mijn zoekopdrachten beheren"},
+            {"command": "help", "description": "Uitleg"}])
+    except Exception as e:
+        print(f"Commando's instellen mislukt: {e}", file=sys.stderr)
+
+
+def find_search(state, uid):
+    return next((s for s in state["searches"] if str(s["uid"]) == str(uid)), None)
+
+
+def list_view(state):
+    if not state["searches"]:
+        return ("📋 Je hebt nog geen zoekopdrachten.\nTyp bv. <code>volkswagen golf</code> "
+                "om er een te maken."), []
+    pause = "\n⏸️ <b>Alle meldingen staan op pauze.</b>" if state.get("paused_all") else ""
+    rows = [[btn(f"{'⏸️' if s.get('paused') else '🟢'} {s['id']}. {label_of(s)}"[:60],
+                 f"m:o:{s['uid']}")] for s in state["searches"]]
+    return f"📋 <b>Je zoekopdrachten</b> — tik er één aan om te beheren.{pause}", rows
+
+
+def one_view(s):
+    status = "⏸️ Gepauzeerd" if s.get("paused") else "🟢 Actief"
+    text = f"{describe(s)}\n\nStatus: {status}"
+    rows = [[btn("✏️ Bewerken", f"m:e:{s['uid']}"),
+             btn("▶️ Hervatten" if s.get("paused") else "⏸️ Pauzeren", f"m:z:{s['uid']}")],
+            [btn("🗑️ Verwijderen", f"m:x:{s['uid']}"), btn("⬅️ Terug", "m:l")]]
+    return text, rows
+
+
+def remove_search(state, s):
+    state["searches"].remove(s)
+    for k in ("seen", "maxid"):
+        state[k].pop(str(s["uid"]), None)
+    renumber(state)
+
+
+def handle_manage(state, data, mid):
+    parts = data.split(":")
+    action, uid = parts[1], (parts[2] if len(parts) > 2 else None)
+    if action == "l":
+        edit(mid, *list_view(state))
+        return
+    s = find_search(state, uid)
+    if not s:
+        edit(mid, *list_view(state))
+        return
+    if action == "o":
+        edit(mid, *one_view(s))
+    elif action == "z":
+        s["paused"] = not s.get("paused")
+        if not s["paused"]:
+            s["primed"] = False  # bij hervatten niet alles van tijdens de pauze sturen
+        edit(mid, *one_view(s))
+    elif action == "x":
+        edit(mid, f"{describe(s)}\n\n🗑️ Zeker verwijderen?",
+             [[btn("✅ Ja, verwijderen", f"m:X:{uid}"), btn("❌ Nee", f"m:o:{uid}")]])
+    elif action == "X":
+        name = label_of(s)
+        remove_search(state, s)
+        text, rows = list_view(state)
+        edit(mid, f"🗑️ {html.escape(name)} verwijderd.\n\n" + text, rows)
+    elif action == "e":
+        edit(mid, f"{describe(s)}\n\n✏️ Bewerken hieronder…", [])
+        start_draft(state, s["make"], s.get("model"), s.get("exclude") or [], base=s)
 
 
 def parse_car(text):
@@ -634,22 +713,29 @@ def run_command(state, text):
     if d and d.get("step") in ("year", "km", "price") and cmd not in ("lijst", "stop", "help"):
         if typed_answer(state, d, text):
             return None
-    if cmd in ("start", "help"):
-        return HELP
-    if cmd == "lijst":
-        if not state["searches"]:
-            return "Nog geen zoekopdrachten. Typ bv. <code>volkswagen golf</code>"
-        return "<b>Je zoekopdrachten</b>\n" + "\n".join(describe(s) for s in state["searches"])
+    if text in (BTN_HELP,) or cmd in ("start", "help", "menu"):
+        send(HELP, keyboard=True)
+        return None
+    if text == BTN_NEW:
+        return ("➕ Typ merk en model, bv. <code>volkswagen golf</code>, <code>audi a3</code> "
+                "of <code>alle merken</code>.")
+    if text == BTN_PAUSE:
+        state["paused_all"] = not state.get("paused_all")
+        if state["paused_all"]:
+            return "⏸️ Alle meldingen staan op pauze. Tik nog eens op ⏯️ om verder te gaan."
+        for s in state["searches"]:
+            s["primed"] = False  # niet alles van tijdens de pauze in één keer sturen
+        return "▶️ Meldingen staan weer aan."
+    if text == BTN_LIST or cmd == "lijst":
+        send(*list_view(state))
+        return None
     if cmd == "stop":
         if not arg.isdigit():
             return "Welke? Bv. <code>stop 2</code> (nummers zie je met <code>lijst</code>)"
         gone = [s for s in state["searches"] if s["id"] == int(arg)]
         if not gone:
             return f"Zoekopdracht {arg} bestaat niet. Zie <code>lijst</code>."
-        state["searches"].remove(gone[0])
-        for k in ("seen", "maxid"):
-            state[k].pop(str(gone[0]["uid"]), None)
-        renumber(state)
+        remove_search(state, gone[0])
         rest = "\n".join(describe(s) for s in state["searches"]) or "Geen zoekopdrachten meer."
         return f"🗑️ {html.escape(label_of(gone[0]))} verwijderd.\n\n<b>Je zoekopdrachten</b>\n{rest}"
     make, model, excl = parse_car(text)
@@ -682,7 +768,8 @@ def toggle_rows(options, chosen, prefix, per_row=2):
 
 def render(d):
     nr = STEPS.index(d["step"]) + 1
-    head = f"🚗 <b>{html.escape(label_of(d))}</b>\nStap {nr}/{len(STEPS)} — "
+    mode = "✏️ Bewerken: " if d.get("edit_uid") else "🚗 "
+    head = f"{mode}<b>{html.escape(label_of(d))}</b>\nStap {nr}/{len(STEPS)} — "
     st = d["step"]
     if st == "fuel":
         rows = toggle_rows(FUELS, d["fuels"], "f")
@@ -718,6 +805,14 @@ def render(d):
         rows = toggle_rows(SITE_NAMES, d["sites"], "s", per_row=1)
         rows.append([btn("✅ Klaar", "done")])
         text = head + "Op welke sites zoeken?"
+    if d.get("edit_uid") and st in ("gear", "year", "km", "price", "dist"):
+        cur = {"gear": GEARS.get(d["gear"]) or "maakt niet uit",
+               "year": f"{d['year_min'] or '…'}–{d['year_max'] or 'nu'}" if d["year_min"] or d["year_max"]
+               else "maakt niet uit",
+               "km": f"max {d['km_max']:,}".replace(",", ".") if d["km_max"] else "maakt niet uit",
+               "price": describe_price(d) or "geen limiet",
+               "dist": f"{d['dist']:g} km" if d["dist"] else "overal"}[st]
+        rows.insert(0, [btn(f"➡️ Laten zoals het is ({cur})", "next")])
     if st != "sites":
         rows.append(nav_row(d))
     else:
@@ -725,10 +820,23 @@ def render(d):
     return text, rows
 
 
-def start_draft(state, make, model, excl):
+def describe_price(s):
+    lo = euro(s["price_min"]) if s.get("price_min") else ""
+    hi = euro(s["price_max"]) if s.get("price_max") else ""
+    if lo and hi:
+        return f"{lo}–{hi}"
+    return f"tot {hi}" if hi else (f"vanaf {lo}" if lo else "")
+
+
+def start_draft(state, make, model, excl, base=None):
     d = {"make": make, "model": model, "exclude": excl, "fuels": [], "bodies": [], "gear": None,
          "year_min": None, "year_max": None, "km_max": None, "price_min": None, "price_max": None,
          "dist": None, "sites": list(SITES), "step": "fuel"}
+    if base:  # bewerken: start met de huidige instellingen
+        for k in ("fuels", "bodies", "gear", "year_min", "year_max", "km_max", "price_min",
+                  "price_max", "dist", "sites"):
+            d[k] = list(base[k]) if isinstance(base.get(k), list) else base.get(k)
+        d["edit_uid"] = base["uid"]
     d["msg"] = send(*render(d))
     state["draft"] = d
 
@@ -771,10 +879,17 @@ def finish(state, d):
     s = {k: d[k] for k in ("make", "model", "exclude", "fuels", "bodies", "gear", "year_min",
                            "year_max", "km_max", "price_min", "price_max", "dist", "sites")}
     s["label"] = label_of(s)
+    target = find_search(state, d["edit_uid"]) if d.get("edit_uid") else None
     for old in state["searches"]:
-        if all(old.get(k) == s[k] for k in s if k != "label"):
+        if old is not target and all(old.get(k) == s[k] for k in s if k != "label"):
             edit(d["msg"], "ℹ️ Die zoekopdracht staat al in je lijst:\n" + describe(old), [])
             return
+    if target:
+        target.update(s)
+        target["primed"] = False  # nieuwe filters: eerst opnieuw 'nulpunt' zetten
+        edit(d["msg"], "✅ Aangepast:\n" + describe(target),
+             [[btn("📋 Mijn zoekopdrachten", "m:l")]])
+        return
     s.update({"uid": state["next_id"], "id": len(state["searches"]) + 1, "primed": False})
     state["next_id"] += 1
     state["searches"].append(s)
@@ -790,6 +905,9 @@ def handle_button(state, cq):
         pass
     d = state.get("draft")
     mid = (cq.get("message") or {}).get("message_id")
+    if data.startswith("m:"):
+        handle_manage(state, data, mid)
+        return
     if not d or mid != d.get("msg"):
         edit(mid, "⌛ Deze keuze is verlopen. Typ je zoekopdracht opnieuw.", [])
         return
@@ -866,6 +984,7 @@ def round_(state):
 def run_for(minutes):
     end = time.time() + minutes * 60
     state = load_state()
+    set_commands()
     last = 0
     while time.time() < end:
         try:
