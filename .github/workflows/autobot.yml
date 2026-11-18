@@ -1,0 +1,43 @@
+name: auto-sniper
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"  # reserve: start een ronde als de ketting ooit stopt
+  workflow_dispatch:
+
+permissions:
+  contents: write            # status (state.json) opslaan
+  actions: write             # zelf de volgende ronde starten
+
+concurrency:
+  group: autobot
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auto's zoeken
+        run: python3 autobot.py --duur 14
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          POSTCODE: ${{ secrets.POSTCODE }}
+          LOCATIE: ${{ secrets.LOCATIE }}
+
+      - name: Status opslaan
+        if: always()
+        run: |
+          git config user.name "autobot"
+          git config user.email "autobot@users.noreply.github.com"
+          git add state.json
+          git diff --cached --quiet || (git commit -m "status bijwerken" && git pull --rebase && git push)
+
+      - name: Volgende ronde starten
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run autobot.yml --ref main
