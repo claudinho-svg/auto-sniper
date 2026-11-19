@@ -42,7 +42,7 @@
   "m2467463239"
  ],
  "fingerprints": {},
- "update_offset": 150583151,
+ "update_offset": 150583158,
  "next_id": 3,
  "last_error_notice": 0,
  "sent": [
@@ -113,7 +113,40 @@
   [
    35,
    1795039788.6993783
+  ],
+  [
+   37,
+   1795076392.0390356
+  ],
+  [
+   39,
+   1795076396.6382227
   ]
  ],
- "draft": null
+ "draft": {
+  "make": "Audi",
+  "model": "a3",
+  "exclude": [],
+  "fuels": [
+   "benzine",
+   "diesel"
+  ],
+  "bodies": [
+   "hatchback"
+  ],
+  "gear": null,
+  "year_min": null,
+  "year_max": null,
+  "km_max": null,
+  "price_min": null,
+  "price_max": null,
+  "dist": null,
+  "sites": [
+   "2dehands",
+   "marktplaats",
+   "autoscout24"
+  ],
+  "step": "gear",
+  "msg": 39
+ }
 }
